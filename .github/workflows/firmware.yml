@@ -1,0 +1,41 @@
+name: Build and test firmware
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  telemetry:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify portable telemetry core
+        run: |
+          g++ -std=c++17 -Wall -Wextra -Werror -I include firmware/Telemetry.cpp tests/telemetry_checks.cpp -o "$RUNNER_TEMP/telemetry-test"
+          "$RUNNER_TEMP/telemetry-test"
+
+  firmware:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        environment: [esp32, esp32s3, esp32-demo, esp32-serial, esp32s3-demo, esp32s3-serial]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install platformio==6.1.18
+      - run: pio run -e "${{ matrix.environment }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: "${{ matrix.environment }}-firmware"
+          path: |
+            .pio/build/${{ matrix.environment }}/bootloader.bin
+            .pio/build/${{ matrix.environment }}/partitions.bin
+            .pio/build/${{ matrix.environment }}/firmware.bin
+          if-no-files-found: error

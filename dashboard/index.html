@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>heirowECU Live</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --face: #161d2b;
+      --rim: #404e60;
+      --cyan: #5ce4ff;
+      --text: #e5f6ff;
+      --muted: #a4b4c7;
+      background: #0e121a;
+      color: var(--text);
+      font-family: system-ui, sans-serif;
+      font-variant-numeric: tabular-nums;
+    }
+    * { box-sizing: border-box; }
+    body { max-width: 1300px; min-height: 100dvh; margin: auto; padding: clamp(12px, 3vw, 36px); }
+    header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    h1 { margin: 0; font-size: clamp(19px, 3vw, 37px); font-weight: 650; letter-spacing: -.04em; }
+    #status { color: var(--muted); font-size: clamp(11px, 1.7vw, 17px); white-space: nowrap; }
+    #status::before { content: "●"; margin-right: .45em; }
+    #status[data-state="live"] { color: var(--cyan); }
+    #status[data-state="demo"] { color: #ffc790; }
+    main { display: grid; grid-template-columns: 1.1fr 1fr; align-items: center; gap: clamp(15px, 4vw, 50px); }
+    .tachometer { width: 100%; max-width: min(100%, 74dvh); justify-self: center; overflow: visible; }
+    .needle { transform-origin: 160px 160px; transition: transform .16s ease-out, opacity .14s; }
+    .supporting { min-width: 0; }
+    .boost { width: min(100%, 420px); margin: auto; display: block; overflow: visible; }
+    .meter-label, .svg-label { color: var(--muted); font-size: 13px; letter-spacing: .08em; font-weight: 650; }
+    .svg-label { fill: var(--muted); }
+    .svg-value { fill: var(--text); font-weight: 650; letter-spacing: -.04em; }
+    .temperatures { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(9px, 2vw, 24px); margin: 8px auto 0; max-width: 420px; }
+    .temperatures > div { display: grid; gap: 5px; min-width: 0; }
+    .temperatures output { font-size: clamp(19px, 4vw, 46px); line-height: 1.1; font-weight: 630; white-space: nowrap; }
+    .track { height: 5px; background: var(--rim); border-radius: 8px; overflow: hidden; }
+    .track > i { display: block; height: 100%; transform: scaleX(0); transform-origin: left; background: var(--cyan); transition: transform .16s ease-out; }
+    #boost-meter { transition: stroke-dasharray .16s ease-out, opacity .14s; }
+    @media (orientation: portrait) {
+      main { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+      .tachometer { max-width: min(100%, 54dvh, 440px); }
+      .supporting { width: min(100%, 420px); justify-self: center; }
+      .boost { max-width: min(100%, 320px); }
+    }
+    @media (orientation: landscape) and (max-height: 460px) {
+      body { padding: 9px clamp(12px, 3vw, 34px); }
+      .tachometer { max-width: min(100%, 83dvh); }
+      .boost { max-width: min(100%, 64dvh); }
+      .temperatures output { font-size: clamp(16px, 10dvh, 32px); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .needle, .track > i, #boost-meter { transition: none; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>heirowECU Live</h1>
+    <span id="status" role="status">Waiting for ECU</span>
+  </header>
+  <main aria-label="Live ECU gauges">
+    <svg class="tachometer" id="tachometer" viewBox="0 0 320 320" role="img" aria-label="Engine speed unavailable">
+      <circle cx="160" cy="160" r="149" fill="var(--face)" stroke="var(--rim)" stroke-width="3"/>
+      <g id="rpm-ticks"></g>
+      <g id="rpm-needle" class="needle" opacity="0" stroke="var(--cyan)">
+        <line x1="160" y1="160" x2="160" y2="52" stroke-width="4" stroke-linecap="round"/>
+        <circle cx="160" cy="160" r="7" fill="var(--cyan)"/>
+      </g>
+      <text id="rpm" x="160" y="218" text-anchor="middle" class="svg-value" font-size="46">—</text>
+      <text x="160" y="242" text-anchor="middle" class="svg-label">RPM</text>
+    </svg>
+    <section class="supporting" aria-label="Boost and temperatures">
+      <svg class="boost" id="boost-gauge" viewBox="0 0 260 124" role="img" aria-label="Boost unavailable">
+        <text x="130" y="18" text-anchor="middle" class="svg-label">BOOST</text>
+        <path d="M23 103 C48 25 212 25 237 103" fill="none" stroke="var(--rim)" stroke-width="8" stroke-linecap="round"/>
+        <path id="boost-meter" d="M23 103 C48 25 212 25 237 103" fill="none" stroke="var(--cyan)" stroke-width="8" stroke-linecap="round" pathLength="100" stroke-dasharray="0 100" opacity="0"/>
+        <text id="boost" x="130" y="104" text-anchor="middle" class="svg-value" font-size="31">—</text>
+      </svg>
+      <div class="temperatures">
+        <div>
+          <span class="meter-label" id="iat-name">IAT</span>
+          <output id="iat" aria-labelledby="iat-name" aria-live="off">—</output>
+          <div class="track" aria-hidden="true"><i id="iat-meter"></i></div>
+        </div>
+        <div>
+          <span class="meter-label" id="coolant-name">COOLANT</span>
+          <output id="coolant" aria-labelledby="coolant-name" aria-live="off">—</output>
+          <div class="track" aria-hidden="true"><i id="coolant-meter"></i></div>
+        </div>
+      </div>
+    </section>
+  </main>
+  <script>
+    'use strict';
+    const byId = id => document.getElementById(id);
+    const svg = (tag, attributes) => {
+      const element = document.createElementNS('http://www.w3.org/2000/svg', tag);
+      for (const [name, value] of Object.entries(attributes)) element.setAttribute(name, value);
+      return element;
+    };
+    const angle = fraction => -125 + 250 * fraction;
+    const polar = (degrees, radius) => {
+      const radians = degrees * Math.PI / 180;
+      return [160 + radius * Math.sin(radians), 160 - radius * Math.cos(radians)];
+    };
+    for (let index = 0; index <= 40; index++) {
+      const major = index % 10 === 0;
+      const degrees = angle(index / 40);
+      const [x1, y1] = polar(degrees, major ? 124 : 132);
+      const [x2, y2] = polar(degrees, 140);
+      byId('rpm-ticks').append(svg('line', {x1, y1, x2, y2, stroke: major ? 'var(--text)' : 'var(--rim)', 'stroke-width': major ? 2 : 1}));
+      if (major) {
+        const [x, y] = polar(degrees, 109);
+        const label = svg('text', {x, y, fill: 'var(--text)', 'font-size': 14, 'text-anchor': 'middle', 'dominant-baseline': 'central'});
+        label.textContent = index / 5;
+        byId('rpm-ticks').append(label);
+      }
+    }
+    const rpmFormat = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 });
+    const boostFormat = new Intl.NumberFormat('en-US', { maximumFractionDigits: 1, minimumFractionDigits: 1, signDisplay: 'exceptZero' });
+    const fraction = (value, min, max) => Math.max(0, Math.min(1, (value - min) / (max - min)));
+    function temperature(key, value, min, max) {
+      byId(key).textContent = value === null ? '—' : Math.round(value) + ' °C';
+      byId(key + '-meter').style.transform = 'scaleX(' + (value === null ? 0 : fraction(value, min, max)) + ')';
+    }
+    function render(values = {}, state = 'waiting') {
+      const number = key => Number.isFinite(values[key]) ? values[key] : null;
+      const rpm = number('rpm');
+      const boost = number('boost_psi');
+      const rpmText = rpm === null ? '—' : rpmFormat.format(rpm);
+      const boostText = boost === null ? '—' : boostFormat.format(boost) + ' psi';
+      byId('rpm').textContent = rpmText;
+      byId('rpm-needle').setAttribute('opacity', rpm === null ? 0 : 1);
+      if (rpm !== null) byId('rpm-needle').style.transform = 'rotate(' + angle(fraction(rpm, 0, 8000)) + 'deg)';
+      byId('tachometer').setAttribute('aria-label', rpm === null ? 'Engine speed unavailable' : rpmText + ' RPM');
+      byId('boost').textContent = boostText;
+      byId('boost-meter').setAttribute('opacity', boost === null ? 0 : 1);
+      byId('boost-meter').setAttribute('stroke-dasharray', (boost === null ? 0 : fraction(boost, -15, 40) * 100) + ' 100');
+      byId('boost-gauge').setAttribute('aria-label', boost === null ? 'Boost unavailable' : 'Boost ' + boostText);
+      temperature('iat', number('iat_c'), -20, 100);
+      temperature('coolant', number('coolant_c'), 20, 130);
+      const status = byId('status');
+      if (status.dataset.state !== state) {
+        status.dataset.state = state;
+        status.textContent = { waiting: 'Waiting for ECU', live: 'LIVE', demo: 'DEMO', lost: 'Signal lost' }[state];
+      }
+    }
+    let sequence = null;
+    let lastChange = 0;
+    async function poll() {
+      if (!document.hidden) {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 1100);
+        try {
+          const response = await fetch('/v1/telemetry', { cache: 'no-store', credentials: 'omit', redirect: 'error', signal: controller.signal });
+          if (response.status === 204) {
+            render();
+          } else {
+            if (!response.ok) throw Error('Telemetry unavailable');
+            const frame = await response.json();
+            if (frame?.version !== 1 || !Number.isSafeInteger(frame.sequence) || frame.sequence < 0 ||
+                !frame.values || typeof frame.values !== 'object' || Array.isArray(frame.values)) throw Error('Invalid telemetry');
+            if (frame.sequence !== sequence) {
+              sequence = frame.sequence;
+              lastChange = performance.now();
+            }
+            if (performance.now() - lastChange < 2700) {
+              render(frame.values, frame.demo === true ? 'demo' : 'live');
+            } else {
+              render({}, 'lost');
+            }
+          }
+        } catch {
+          render({}, 'lost');
+        } finally {
+          clearTimeout(timeout);
+        }
+      }
+      setTimeout(poll, 150);
+    }
+    poll();
+  </script>
+</body>
+</html>
